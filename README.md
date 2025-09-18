@@ -1,57 +1,151 @@
 # 🪄 Context Crafter
 
-**In the age of AI, your codebase is a conversation.  
+**In the age of AI, your codebase is a conversation.
 This is the ultimate universal translator.**
 
 ---
 
-## ✨ Stop Copying Files. Start Crafting Context.
-Manually copying files into an AI prompt breaks your flow, makes you lose track of your goal, and quickly hits context limits.  
-The conversation with your AI becomes a series of frustrating fragments.  
+## ✨ What It Does
 
-**Context Crafter** transforms this broken dialogue into a seamless, intelligent partnership.  
-It is not just a utility—it’s a new workflow for software development in the age of AI.  
-
-It reads the soul of your repository, filters out the noise, and presents a single, perfect brief for your AI counterpart.
+Manually copying files into an AI prompt breaks your flow and quickly hits context limits.
+**Context Crafter** fixes this by reading your repository, filtering out the noise, and giving your AI a single, focused brief.
 
 ---
 
-## 🧪 The Alchemy: What Makes It Magical
+## 🧪 Features
 
-- 🌐 **Universal Ingestion**  
-  Process any public GitHub repository from the live web app, or use the offline desktop version to process local folders with a path paste or drag-and-drop.
-
-- 🤖 **The Arbiter Engine**  
-  Smart Mode understands project structures and instantly dismisses the noise—`node_modules`, `.git`, build artifacts, and caches—ensuring only the most relevant code is included.
-
-- ⚙️ **The Sculptor's Tools**  
-  Fine-tune the context with custom ignore patterns (`docs/`, `*.test.js`, etc.), sculpting the perfect input for your AI.
-
-- 🧩 **The Scribe's Scroll**  
-  For vast codebases, Context Crafter splits content into numbered scrolls with a guided workflow, ensuring every line of your saga is captured, perfectly and in order.
-
-- 💎 **The Obsidian UI**  
-  A sleek, glassmorphism interface—fluid, responsive, and designed to feel like an extension of your mind.
+* 🌐 **Universal Ingestion** – Process any public GitHub repo or local folder
+* 🤖 **Smart Filtering** – Ignores noise like `node_modules`, `.git`, and build artifacts
+* ⚙️ **Custom Controls** – Add ignore patterns to focus only on what matters
+* 🧩 **Context Splitting** – Breaks large projects into manageable, ordered parts
+* 💎 **Modern UI** – Clean, glassmorphism design for a smooth workflow
 
 ---
 
-## 🚀 Getting Started: Your First Craft
+## 🚀 Getting Started
 
-### Using the Live Web App (Recommended)
-1. Open the deployed Context Crafter application  
-2. Paste the URL of any public GitHub repository  
-3. Click **Process Repository**  
-4. Use the guided *Copy Next Part* workflow to feed context into your AI  
+### Using the Web App
 
-### Running Locally for Development
+1. Open the Context Crafter app
+2. Paste a GitHub repository URL
+3. Click **Process Repository**
+4. Follow the guided workflow to copy context into your AI
+
+### Running Locally
+
 ```bash
-# Clone the repository
 git clone https://github.com/your-username/context-crafter.git
 cd context-crafter
+```
 
-# Build the backend & frontend
-# (see setup instructions in respective directories)
+---
 
-# Launch servers
-# then open in browser:
-http://localhost:5173
+## ⚡ Setup Instructions
+
+### 🛠 Backend Setup
+
+Navigate to the backend directory:
+
+```bash
+cd backend
+```
+
+Create and activate a Python virtual environment:
+
+**For Windows**
+
+```bash
+python -m venv venv
+.\venv\Scripts\activate
+```
+
+**For macOS/Linux**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+Install the required packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### 🎨 Frontend Setup
+
+Navigate to the frontend directory:
+
+```bash
+cd ../frontend
+```
+
+Install the required npm packages:
+
+```bash
+npm install
+```
+
+---
+
+### 🚀 Launch the Application
+
+**Terminal 1 (Backend):**
+
+```bash
+uvicorn main:app --reload
+```
+
+**Terminal 2 (Frontend):**
+
+```bash
+npm run dev
+```
+
+---
+
+### 🌐 Access the App
+
+Open your browser and go to:
+[http://localhost:5173](http://localhost:5173)
+
+---
+
+## 🛠 Tech Stack
+
+* **Frontend:** React, Vite, TypeScript, Tailwind CSS
+* **Backend:** FastAPI, Python 3
+* **Deployment:** Vercel (frontend) & Render (backend)
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome!
+
+1. Fork the repo
+2. Create a branch:
+
+```bash
+git checkout -b feature/my-feature
+```
+
+3. Commit your changes:
+
+```bash
+git commit -m "Add my feature"
+```
+
+4. Push to your branch:
+
+```bash
+git push origin feature/my-feature
+```
+
+5. Open a Pull Request 🚀
+
+---
+
+<p align="center">Made with ❤️ by those who believe in better workflows.</p> 
