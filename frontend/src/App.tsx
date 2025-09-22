@@ -1,357 +1,651 @@
-import { useState, useCallback } from 'react';
-import { Upload, Wand2, Copy, Check, AlertCircle, BrainCircuit, Github, Computer, ArrowRight, UploadCloud, FolderSearch } from 'lucide-react';
-import axios from 'axios';
+import { useState, useCallback, useRef } from 'react';
+import { UploadCloud, Github, Wand2, Copy, Check, AlertCircle, Settings, X, ArrowUp, LoaderCircle, RefreshCw } from 'lucide-react';
 
-// --- Helper component for loading skeleton ---
-const SkeletonLoader = () => (
-    <div className="space-y-4 animate-pulse">
-        <div className="h-4 bg-gray-700 rounded w-3/4"></div>
-        <div className="h-4 bg-gray-700 rounded w-1/2"></div>
-        <div className="h-4 bg-gray-700 rounded w-5/6"></div>
-        <div className="h-4 bg-gray-700 rounded w-2/3"></div>
-        <div className="h-4 bg-gray-700 rounded w-3/4"></div>
-    </div>
-);
-
-type InputType = 'dnd' | 'github' | 'path';
-interface FilePayload { path: string; content: string; }
-
-export default function App() {
-    // --- STATE MANAGEMENT ---
-    const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-    const [loadingMessage, setLoadingMessage] = useState('Processing...');
-    const [errorMessage, setErrorMessage] = useState('');
-    const [inputValue, setInputValue] = useState(''); // For GitHub URL or Local Path
-    const [tokenEstimate, setTokenEstimate] = useState(0);
-    const [inputType, setInputType] = useState<InputType>('dnd');
-    const [isDraggingOver, setIsDraggingOver] = useState(false);
-
-    // --- Chunking & Copying State ---
-    const [isChunked, setIsChunked] = useState(false);
-    const [chunks, setChunks] = useState<string[]>([]);
-    const [copiedChunks, setCopiedChunks] = useState<boolean[]>([]);
-    const [lastCopiedIndex, setLastCopiedIndex] = useState<number | null>(null);
-    const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
-    const [isSmartMode] = useState(true);
-
-
-    // --- File Processing Logic ---
-    const processFiles = async (projectName: string, files: FilePayload[]) => {
-        setStatus('loading');
-        setLoadingMessage('Crafting your context...');
-        setErrorMessage('');
-        try {
-            // UPDATED: Changed URL to be relative
-            const response = await axios.post('/api/process-files', {
-                projectName,
-                files,
-                mode: isSmartMode ? 'intelligent' : 'raw',
-            });
-            const data = response.data;
-            if (data && data.chunks) {
-                setTokenEstimate(data.token_estimate || 0);
-                setIsChunked(data.isChunked);
-                setChunks(data.chunks);
-                setCopiedChunks(new Array(data.chunks.length).fill(false));
-                setCurrentChunkIndex(0);
-                setStatus('success');
-            } else { throw new Error('Invalid response from engine.'); }
-        } catch (error: any) {
-            handleApiError(error);
-        }
-    };
-    
-    const processGithub = async () => {
-        if (!inputValue) {
-            setErrorMessage('Please paste a GitHub URL first!');
-            setStatus('error');
-            return;
-        }
-        setStatus('loading');
-        setLoadingMessage('Cloning repository...');
-        setErrorMessage('');
-        try {
-            // UPDATED: Changed URL to be relative
-            const response = await axios.post('/api/process-github', {
-                url: inputValue,
-                mode: isSmartMode ? 'intelligent' : 'raw',
-            });
-             const data = response.data;
-            if (data && data.chunks) {
-                setTokenEstimate(data.token_estimate || 0);
-                setIsChunked(data.isChunked);
-                setChunks(data.chunks);
-                setCopiedChunks(new Array(data.chunks.length).fill(false));
-                setCurrentChunkIndex(0);
-                setStatus('success');
-            } else { throw new Error('Invalid response from engine.'); }
-        } catch (error: any) {
-            handleApiError(error);
-        }
-    }
-
-    const processPath = async () => {
-        if (!inputValue) {
-            setErrorMessage('Please provide a local folder path!');
-            setStatus('error');
-            return;
-        }
-        setStatus('loading');
-        setLoadingMessage('Scanning local folder...');
-        setErrorMessage('');
-        try {
-            // UPDATED: Changed URL to be relative
-            const response = await axios.post('/api/process-path', {
-                path: inputValue,
-                mode: isSmartMode ? 'intelligent' : 'raw',
-            });
-            const data = response.data;
-            if (data && data.chunks) {
-                setTokenEstimate(data.token_estimate || 0);
-                setIsChunked(data.isChunked);
-                setChunks(data.chunks);
-                setCopiedChunks(new Array(data.chunks.length).fill(false));
-                setCurrentChunkIndex(0);
-                setStatus('success');
-            } else { throw new Error('Invalid response from engine.'); }
-        } catch (error: any) {
-            handleApiError(error);
-        }
-    };
-
-    const handleApiError = (error: any) => {
-        console.error("API call error:", error);
-        setStatus('error');
-        if (error.response) {
-            setErrorMessage(`Error from engine: ${error.response.data.detail || 'Something went wrong.'}`);
-        } else if (error.request) {
-            setErrorMessage('Could not talk to the engine. Is it running?');
-        } else {
-            setErrorMessage(`An unexpected error occurred: ${error.message}`);
-        }
-    };
-
-
-    // --- Drag and Drop Handlers ---
-    const handleDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        setIsDraggingOver(false);
-        if (status === 'loading' || inputType !== 'dnd') return;
-
-        const items = event.dataTransfer.items;
-        if (items && items.length > 0) {
-            setStatus('loading');
-            setLoadingMessage('Reading files...');
-            const rootEntry = items[0].webkitGetAsEntry();
-            if (rootEntry && rootEntry.isDirectory) {
-                const files = await getFilesFromDirectory(rootEntry as FileSystemDirectoryEntry);
-                await processFiles(rootEntry.name, files);
-            } else {
-                setErrorMessage('Please drop a folder, not a single file.');
-                setStatus('error');
-            }
-        }
-    }, [isSmartMode, status, inputType]);
-
-    const getFilesFromDirectory = async (dirEntry: FileSystemDirectoryEntry): Promise<FilePayload[]> => {
-        const reader = dirEntry.createReader();
-        return new Promise((resolve, reject) => {
-            reader.readEntries(async (entries) => {
-                let files: FilePayload[] = [];
-                for (const entry of entries) {
-                    if (entry.isFile) {
-                        try {
-                            const file = await getFileFromFileEntry(entry as FileSystemFileEntry);
-                            const content = await file.text();
-                            files.push({ path: entry.fullPath.substring(1), content });
-                        } catch (e) { console.warn(`Could not read file: ${entry.name}`, e); }
-                    } else if (entry.isDirectory) {
-                        files = files.concat(await getFilesFromDirectory(entry as FileSystemDirectoryEntry));
-                    }
-                }
-                resolve(files);
-            }, reject);
-        });
-    };
-
-    const getFileFromFileEntry = (fileEntry: FileSystemFileEntry): Promise<File> => {
-        return new Promise((resolve, reject) => fileEntry.file(resolve, reject));
-    }
-
-    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {  
-        e.preventDefault();  
-        if (inputType === 'dnd') {
-            setIsDraggingOver(true);  
-        }
-    };
-    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {  
-        e.preventDefault();  
-        setIsDraggingOver(false);  
-    };
-
-
-    // --- Other Helpers ---
-    const handleCopy = (textToCopy: string, index: number) => {
-        if (!textToCopy) return;
-        navigator.clipboard.writeText(textToCopy);
-
-        if (!copiedChunks[index]) {
-            const newCopiedChunks = [...copiedChunks];
-            newCopiedChunks[index] = true;
-            setCopiedChunks(newCopiedChunks);
-            if (index === currentChunkIndex && index < chunks.length - 1) {
-                setCurrentChunkIndex(index + 1);
-            }
-        }
-        
-        setLastCopiedIndex(index);
-        setTimeout(() => {
-            setLastCopiedIndex(prevIndex => (prevIndex === index ? null : prevIndex));
-        }, 2000);
-    };
-    
-    const handleCopyNext = () => {
-        if (currentChunkIndex >= chunks.length) return;
-        handleCopy(chunks[currentChunkIndex], currentChunkIndex);
-    };
-    
-    const handleReset = () => {
-        setStatus('idle');
-        setChunks([]);
-        setIsChunked(false);
-        setTokenEstimate(0);
-        setErrorMessage('');
-        setInputValue('');
-        setCurrentChunkIndex(0);
-        setLastCopiedIndex(null);
-    };
-
-    const handleInputTypeChange = (newType: InputType) => {
-        if (status === 'loading') return;
-        setInputType(newType);
-        handleReset();
-    };
-
-    // --- UI ---
-    return (
-        <div  
-            className="min-h-screen bg-gray-900 text-gray-200 font-sans flex flex-col p-4 sm:p-6 lg:p-8 overflow-hidden relative"
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-        >
-            <div className={`absolute inset-0 bg-purple-500/20 z-50 transition-opacity duration-300 pointer-events-none ${isDraggingOver ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="flex justify-center items-center h-full">
-                    <div className="text-center p-8 border-4 border-dashed border-white rounded-2xl">
-                        <UploadCloud size={64} className="mx-auto text-white mb-4" />
-                        <h2 className="text-2xl font-bold text-white">Drop your project folder here</h2>
-                    </div>
-                </div>
-            </div>
-
-            <div className="absolute top-0 left-0 -translate-x-1/3 -translate-y-1/3 w-[800px] h-[800px] bg-purple-900/40 blur-[150px] rounded-full z-0"></div>
-            <div className="absolute bottom-0 right-0 translate-x-1/3 translate-y-1/3 w-[800px] h-[800px] bg-sky-900/40 blur-[150px] rounded-full z-0"></div>
-
-            <div className="z-10 w-full max-w-4xl mx-auto flex flex-col flex-grow">
-                <header className="w-full mx-auto mb-6 text-center">
-                    <h1 className="text-3xl sm:text-4xl font-bold text-white flex items-center justify-center gap-3"><Wand2 size={36} className="text-purple-400" />Context Crafter</h1>
-                    <p className="text-gray-400 mt-2">The intelligent way to package your projects for any LLM.</p>
-                </header>
-
-                <div className="w-full mx-auto mb-6">
-                    <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-                        <button onClick={() => handleInputTypeChange('dnd')} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${inputType === 'dnd' ? 'bg-purple-600 text-white' : 'bg-gray-800/60 hover:bg-gray-700/80 text-gray-300'}`}><Computer size={18} /> Drag & Drop Folder</button>
-                        <button onClick={() => handleInputTypeChange('github')} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${inputType === 'github' ? 'bg-purple-600 text-white' : 'bg-gray-800/60 hover:bg-gray-700/80 text-gray-300'}`}><Github size={18} /> GitHub Repo</button>
-                        <button onClick={() => handleInputTypeChange('path')} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${inputType === 'path' ? 'bg-purple-600 text-white' : 'bg-gray-800/60 hover:bg-gray-700/80 text-gray-300'}`}><FolderSearch size={18} /> Local Path</button>
-                    </div>
-
-                    {inputType === 'path' && (
-                        <div className="bg-black/20 backdrop-blur-sm border border-white/10 rounded-lg p-4 flex flex-col sm:flex-row gap-4 items-center">
-                            <FolderSearch className="text-purple-400 h-6 w-6 hidden sm:block" />
-                            <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder='Paste absolute path to local project folder...' className="w-full bg-gray-900 rounded-md px-4 py-3 border border-gray-700 focus:ring-2 focus:ring-purple-500 outline-none transition" disabled={status === 'loading'} />
-                            {status === 'idle' || status === 'error' ? (
-                                <button onClick={processPath} className="w-full sm:w-auto flex-shrink-0 flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap"><Upload size={20} /> Process Path</button>
-                            ) : (
-                                <button onClick={handleReset} className="w-full sm:w-auto flex-shrink-0 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap">Start Over</button>
-                            )}
-                        </div>
-                    )}
-                    
-                    {inputType === 'github' && (
-                        <div className="bg-black/20 backdrop-blur-sm border border-white/10 rounded-lg p-4 flex flex-col sm:flex-row gap-4 items-center">
-                            <Github className="text-purple-400 h-6 w-6 hidden sm:block" />
-                            <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder='Paste GitHub repository URL...' className="w-full bg-gray-900 rounded-md px-4 py-3 border border-gray-700 focus:ring-2 focus:ring-purple-500 outline-none transition" disabled={status === 'loading'} />
-                            {status === 'idle' || status === 'error' ? (
-                                <button onClick={processGithub} className="w-full sm:w-auto flex-shrink-0 flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap"><Upload size={20} /> Process Repo</button>
-                            ) : (
-                                <button onClick={handleReset} className="w-full sm:w-auto flex-shrink-0 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded-lg transition-all whitespace-nowrap">Start Over</button>
-                            )}
-                        </div>
-                    )}
-                    
-                    {inputType === 'dnd' && (status === 'idle' || status === 'error') && (
-                        <div className="bg-black/20 backdrop-blur-sm border border-white/10 rounded-lg p-8 flex flex-col gap-4 items-center text-center text-gray-500">
-                            <UploadCloud size={48} className="mb-2 text-gray-600" />
-                            <h3 className="font-semibold text-lg text-gray-400">Drag & Drop a Project Folder</h3>
-                            <p>Or select a different input method above.</p>
-                        </div>
-                    )}
-                    {status === 'error' && <p className="text-red-400 mt-2 ml-2 flex items-center gap-2"><AlertCircle size={16} /> {errorMessage}</p>}
-                    {status === 'loading' && <p className="text-purple-300 mt-2 ml-2 animate-pulse">{loadingMessage}</p>}
-                </div>
-
-                <main className="flex-grow w-full mx-auto grid grid-cols-1 gap-6">
-                    <div className={`bg-black/20 backdrop-blur-sm border border-white/10 rounded-lg shadow-lg p-5 flex flex-col min-h-[500px] ${status === 'idle' && inputType === 'dnd' ? 'hidden' : ''}`}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-semibold text-white">Master Prompt</h2>
-                             {status === 'success' && (
-                                <div className='text-right'>
-                                    {isChunked && <p className='text-sm font-semibold'>{`Part ${Math.min(currentChunkIndex + 1, chunks.length)} of ${chunks.length}`}</p>}
-                                    <p className='text-xs text-gray-500'>Token Estimate: ~{tokenEstimate} tokens</p>
-                                </div>
-                             )}
-                        </div>
-                        <div className="flex-grow bg-gray-900/80 rounded-md overflow-auto text-sm border border-gray-700 scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-purple-500 relative">
-                           {status === 'success' && ( isChunked ? (
-                                <div className='p-4 space-y-4'>
-                                    {chunks.map((chunk, index) => (
-                                        <div key={index} className={`p-3 rounded-lg transition-all ${copiedChunks[index] ? 'bg-green-900/50 border-green-700/60' : 'bg-gray-800/50 border-gray-700/60'} border`}>
-                                            <div className="flex justify-between items-center mb-2">
-                                                <p className="font-bold text-gray-300">Part {index + 1} of {chunks.length}</p>
-                                                <button onClick={() => handleCopy(chunk, index)} className={`flex items-center gap-2 text-xs font-semibold py-1 px-3 rounded-md transition-all ${lastCopiedIndex === index ? 'bg-green-500 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}>
-                                                    {lastCopiedIndex === index ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy Part {index + 1}</>}
-                                                </button>
-                                            </div>
-                                            <pre className="whitespace-pre-wrap break-words text-gray-400 text-xs">{chunk.substring(0, 200)}...</pre>
-                                        </div> ))}
-                                </div>
-                            ) : ( <pre className="whitespace-pre-wrap break-words p-4">{chunks[0]}</pre> ))}
-                           {status === 'loading' && <div className='p-4'><SkeletonLoader /></div>}
-                           {(status === 'idle' || status === 'error') && (
-                                <div className="h-full flex flex-col justify-center items-center text-center text-gray-500">
-                                    <BrainCircuit size={48} className="mb-4 text-gray-600" />
-                                    <h3 className="font-semibold text-lg text-gray-400">Ready to build</h3>
-                                    <p>Your AI-ready prompt will appear here.</p>
-                                </div>
-                           )}
-                        </div>
-                         {status === 'success' && ( isChunked ? (
-                            <div className="mt-4">
-                               <button onClick={handleCopyNext} disabled={currentChunkIndex >= chunks.length} className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-all">
-                                   {currentChunkIndex >= chunks.length ? 'All Parts Copied!' : `Copy Next Part (${currentChunkIndex + 1}/${chunks.length})`}
-                                   {currentChunkIndex < chunks.length && <ArrowRight size={20} />}
-                               </button>
-                            </div>
-                         ) : (
-                             <div className="mt-4">
-                               <button onClick={() => handleCopy(chunks[0], 0)} className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all">
-                                   {lastCopiedIndex === 0 ? <><Check size={20}/> Copied!</> : 'Copy Full Prompt'}
-                               </button>
-                            </div>
-                         ))}
-                    </div>
-                </main>
-            </div>
-        </div>
-    )
+// --- Type Definitions ---
+interface FilePayload {
+  path: string;
+  content: string;
 }
+
+interface ContentPart {
+  type: 'markdown' | 'code';
+  content: string;
+  language?: string;
+  path?: string;
+}
+
+interface Chunk {
+  parts: ContentPart[];
+}
+
+interface ProcessedOutput {
+    tree: string;
+    chunks: Chunk[];
+    isChunked: boolean;
+    token_estimate: number;
+}
+
+// --- Configuration ---
+const DEFAULT_IGNORE_PATTERNS = new Set([
+  ".git", ".svn", ".hg", ".vscode", ".idea", "node_modules", "vendor", "Pods",
+  "venv", ".venv", "__pycache__", "*.pyc", "*.pyo", "*.pyd", "build", "dist",
+  "target", "out", ".DS_Store", "Thumbs.db", "*.log", ".env",
+]);
+
+const BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp", ".pdf", ".zip",
+  ".tar.gz", ".rar", ".7z", ".mp3", ".mp4", ".mov", ".avi", ".woff", ".woff2",
+  ".eot", ".ttf", ".otf", ".exe", ".dll", ".so", ".a", ".lib", ".dmg", ".app"
+]);
+
+// --- Core Engine Logic (Integrated) ---
+function isIgnored(path: string, customIgnorePatterns: string[]): boolean {
+  const parts = path.split('/');
+  const customRegexps = customIgnorePatterns.map(pattern =>
+    new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$')
+  );
+
+  for (const part of parts) {
+    if (DEFAULT_IGNORE_PATTERNS.has(part)) return true;
+    for (const regexp of customRegexps) {
+      if (regexp.test(part) || regexp.test(path)) return true;
+    }
+  }
+
+  const extension = '.' + path.split('.').pop();
+  return BINARY_EXTENSIONS.has(extension);
+}
+
+function getLanguage(filename: string): string {
+    const extension = filename.split('.').pop()?.toLowerCase();
+    const map: Record<string, string> = {
+        'js': 'javascript', 'ts': 'typescript', 'jsx': 'jsx', 'tsx': 'tsx', 'py': 'python',
+        'html': 'html', 'css': 'css', 'json': 'json', 'md': 'markdown', 'sh': 'bash', 'yml': 'yaml'
+    };
+    return map[extension || ''] || 'plaintext';
+}
+
+function processProject(
+    files: FilePayload[],
+    projectName: string,
+    customIgnorePatterns: string[]
+): ProcessedOutput {
+    console.log(`[Engine] Starting processing for: ${projectName}`);
+    const treeLines: string[] = [];
+    const filteredFiles = files.filter(file => !isIgnored(file.path, customIgnorePatterns));
+    console.log(`[Engine] Found ${files.length} total files, ${filteredFiles.length} files after filtering.`);
+    filteredFiles.sort((a, b) => a.path.localeCompare(b.path));
+
+    const tree = new Map<string, any>();
+    filteredFiles.forEach(file => {
+        const parts = file.path.split('/');
+        let currentLevel = tree;
+        parts.forEach((part, index) => {
+            if (index === parts.length - 1) {
+                currentLevel.set(part, null);
+            } else {
+                if (!currentLevel.has(part)) currentLevel.set(part, new Map());
+                currentLevel = currentLevel.get(part);
+            }
+        });
+    });
+
+    function buildTree(node: Map<string, any>, prefix = "") {
+        const entries = Array.from(node.keys()).sort();
+        entries.forEach((key, index) => {
+            const isLast = index === entries.length - 1;
+            const connector = isLast ? "└── " : "├── ";
+            const newPrefix = prefix + (isLast ? "    " : "│   ");
+            const value = node.get(key);
+            if (value === null) {
+                treeLines.push(prefix + connector + key);
+            } else {
+                treeLines.push(prefix + connector + key + "/");
+                buildTree(value, newPrefix);
+            }
+        });
+    }
+
+    treeLines.push(projectName);
+    buildTree(tree);
+    const treeString = treeLines.join('\n');
+
+    let totalContentChars = 0;
+    const contentParts: ContentPart[] = [
+        { type: 'markdown', content: `# Project Context: ${projectName}\n\nThis context was generated by Context Crafter. Below is the project structure followed by the contents of each file.` },
+        { type: 'code', language: 'plaintext', content: treeString, path: 'Project Structure' }
+    ];
+
+    for (const file of filteredFiles) {
+        contentParts.push({ type: 'code', content: file.content, language: getLanguage(file.path), path: file.path });
+        totalContentChars += file.content.length;
+    }
+
+    const tokenEstimate = Math.ceil((treeString.length + totalContentChars) / 4);
+    const TOKEN_LIMIT_PER_CHUNK = 15000 * 4;
+    let chunks: Chunk[] = [];
+    let isChunked = tokenEstimate * 4 > TOKEN_LIMIT_PER_CHUNK;
+
+    if (isChunked) {
+        console.log(`[Engine] Project is large (${tokenEstimate} tokens), chunking...`);
+        let currentChunk: Chunk = { parts: [] };
+        let currentChunkSize = 0;
+
+        const addIntro = (partNum: number, totalParts: string) => {
+          const introContent = `I am providing the context for a project named '${projectName}'. I will send it in ${totalParts} parts. Acknowledge each part by saying 'RECEIVED PART ${partNum} of ${totalParts}' and wait for the final part before summarizing.\n\nHere is Part ${partNum}:\n\n`;
+          const introPart: ContentPart = { type: 'markdown', content: introContent };
+          currentChunk.parts.push(introPart);
+          currentChunkSize += introContent.length;
+        };
+
+        addIntro(1, 'multiple');
+
+        for (const part of contentParts) {
+            const partSize = part.content.length + (part.path?.length || 0) + 50;
+            if (currentChunkSize + partSize > TOKEN_LIMIT_PER_CHUNK && currentChunk.parts.length > 1) {
+                chunks.push(currentChunk);
+                currentChunk = { parts: [] };
+                currentChunkSize = 0;
+                addIntro(chunks.length + 1, 'multiple');
+            }
+            currentChunk.parts.push(part);
+            currentChunkSize += partSize;
+        }
+        chunks.push(currentChunk);
+
+        chunks.forEach((chunk, index) => {
+            if (chunk.parts[0]?.type === 'markdown') {
+              chunk.parts[0].content = chunk.parts[0].content.replace('multiple parts', `${chunks.length} parts`).replace(/PART \d+ of multiple/, `PART ${index + 1} of ${chunks.length}`);
+            }
+        });
+
+        const finalPart = { type: 'markdown' as const, content: `\n\nALL CONTEXT PROVIDED. Please confirm you have received all ${chunks.length} parts and are ready for my questions.` };
+        chunks[chunks.length - 1].parts.push(finalPart);
+
+    } else {
+        console.log(`[Engine] Project is small enough (${tokenEstimate} tokens), not chunking.`);
+        chunks.push({ parts: contentParts });
+    }
+
+    console.log("[Engine] Processing complete.");
+    return { tree: treeString, chunks, isChunked, token_estimate: tokenEstimate };
+}
+
+// --- Helper Components ---
+const CodeBlock = ({ content }: { content: string; }) => (<pre className="bg-slate-900/70 p-4 rounded-md overflow-x-auto text-sm text-slate-300 border border-slate-700"><code>{content}</code></pre>);
+
+// A more reliable copy method for Chrome extension popups
+const copyToClipboard = (text: string) => {
+  const ta = document.createElement('textarea');
+  ta.style.position = 'absolute';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.value = text;
+  ta.select();
+  try {
+    document.execCommand('copy');
+  } catch (err) {
+    console.error('Fallback: Oops, unable to copy', err);
+  }
+  document.body.removeChild(ta);
+};
+
+// --- Main App Component ---
+export default function App() {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [inputType, setInputType] = useState<'drop' | 'github'>('drop');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [isSmartMode, setIsSmartMode] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [customIgnorePatterns, setCustomIgnorePatterns] = useState('');
+  const [processedData, setProcessedData] = useState<ProcessedOutput | null>(null);
+  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
+  const [copiedChunks, setCopiedChunks] = useState<boolean[]>([]);
+  const [isRewindMode, setIsRewindMode] = useState(false);
+  const nextChunkToCopyIndex = processedData ? copiedChunks.findIndex(copied => !copied) : -1;
+  const chunkRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null); // Ref for the hidden file input
+
+  const handleApiError = (error: any) => {
+    console.error("[App] An error occurred:", error);
+    setStatus('error');
+    setErrorMessage(error.message || "An unexpected error occurred. Check the extension console for details.");
+  };
+
+  const processFolderData = (files: FilePayload[], projectName: string) => {
+    try {
+      console.log(`[App] Received ${files.length} files for project: ${projectName}`);
+      if (files.length === 0) throw new Error("The selected folder is empty or no readable files were found after filtering.");
+      const output = processProject(files, projectName, customIgnorePatterns.split('\n').filter(p => p.trim() !== ''));
+      setProcessedData(output);
+      setCopiedChunks(new Array(output.chunks.length).fill(false));
+      setStatus('success');
+    } catch (error: any) {
+      handleApiError(error);
+    }
+  };
+
+  const handleFileDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    setStatus('loading');
+    setErrorMessage('');
+    setProcessedData(null);
+
+    try {
+        const items = e.dataTransfer.items;
+        if (!items || items.length === 0) throw new Error('No folder was dropped.');
+
+        const rootEntry = items[0].webkitGetAsEntry();
+        if (!rootEntry || !rootEntry.isDirectory) throw new Error("Please drop a single folder, not files.");
+
+        const projectName = rootEntry.name;
+        console.log(`[App] Dropped folder: ${projectName}`);
+
+        const processEntry = async (entry: any): Promise<FilePayload[]> => {
+          if (entry.isFile) {
+            return new Promise((resolve, reject) => {
+              entry.file((file: File) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const path = entry.fullPath ? entry.fullPath.slice(1) : entry.name;
+                  resolve([{ path, content: reader.result as string }]);
+                };
+                reader.onerror = (err) => {
+                    console.error(`[App] Error reading file: ${entry.fullPath}`, err);
+                    reject(err);
+                };
+                reader.readAsText(file);
+              });
+            });
+          }
+          if (entry.isDirectory) {
+            const reader = entry.createReader();
+            const entries = await new Promise<any[]>((resolve) => reader.readEntries(resolve));
+            const nestedFiles = await Promise.all(entries.map(processEntry));
+            return nestedFiles.flat();
+          }
+          return [];
+        };
+
+        const files = await processEntry(rootEntry);
+        processFolderData(files, projectName);
+    } catch(error) {
+        handleApiError(error);
+    }
+  }, [customIgnorePatterns]);
+
+  // NEW: Handler for the hidden file input
+  const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    setStatus('loading');
+    setErrorMessage('');
+    setProcessedData(null);
+
+    try {
+      const files = event.target.files;
+      if (!files || files.length === 0) {
+        setStatus('idle'); // No files selected, go back to idle
+        return;
+      }
+
+      console.log(`[App] Selected ${files.length} files via input.`);
+      
+      const filePayloads: FilePayload[] = [];
+      const fileReadPromises: Promise<void>[] = [];
+      let projectName = "Selected Project";
+      
+      if (files.length > 0 && (files[0] as any).webkitRelativePath) {
+        projectName = (files[0] as any).webkitRelativePath.split('/')[0];
+      }
+
+      for (const file of Array.from(files)) {
+        const promise = new Promise<void>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            filePayloads.push({
+              path: (file as any).webkitRelativePath || file.name,
+              content: reader.result as string,
+            });
+            resolve();
+          };
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+        fileReadPromises.push(promise);
+      }
+
+      await Promise.all(fileReadPromises);
+      processFolderData(filePayloads, projectName);
+
+    } catch (error: any) {
+      handleApiError(error);
+    }
+  };
+  
+  const handleProcessGithub = useCallback(async () => {
+    setStatus('loading');
+    setErrorMessage('');
+    setProcessedData(null);
+    const match = githubUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!match) {
+        handleApiError(new Error("Invalid GitHub URL format. Use 'github.com/owner/repo'."));
+        return;
+    }
+    const [_, owner, repo] = match;
+    console.log(`[App] Processing GitHub repo: ${owner}/${repo}`);
+
+    try {
+      const repoDataRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+      if (!repoDataRes.ok) throw new Error(`Could not fetch repo data. Status: ${repoDataRes.status}`);
+      const repoData = await repoDataRes.json();
+
+      const defaultBranch = repoData.default_branch;
+      const treeDataRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`);
+      if (!treeDataRes.ok) throw new Error(`Could not fetch repo tree. Status: ${treeDataRes.status}`);
+      const treeData = await treeDataRes.json();
+      if (treeData.truncated) {
+          handleApiError(new Error("Repository is too large to process via API. Please try a smaller repository."));
+          return;
+      }
+
+      const filesToFetch = treeData.tree.filter((node: any) => node.type === 'blob').map((node: any) => node.path);
+
+      const filePayloads = await Promise.all(
+        filesToFetch.map(async (path: string) => {
+          try {
+            const res = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${defaultBranch}/${path}`);
+            if (!res.ok) return null;
+            const content = await res.text();
+            return { path, content };
+          } catch (e) {
+            console.warn(`[App] Failed to fetch file: ${path}`, e);
+            return null;
+          }
+        })
+      );
+
+      processFolderData(filePayloads.filter(Boolean) as FilePayload[], repo);
+
+    } catch (error: any) {
+      handleApiError(error);
+    }
+  }, [githubUrl, customIgnorePatterns]);
+
+
+  const handleReset = () => {
+    setStatus('idle');
+    setProcessedData(null);
+    setErrorMessage('');
+    setGithubUrl('');
+    setCopiedChunks([]);
+    setCopiedStates({});
+  };
+
+  const handleCopy = (textToCopy: string, key: string) => {
+    if(!textToCopy) return;
+    copyToClipboard(textToCopy);
+    setCopiedStates(prev => ({ ...prev, [key]: true }));
+    setTimeout(() => setCopiedStates(prev => ({ ...prev, [key]: false })), 2000);
+  };
+
+  const handleCopyFullPrompt = () => {
+    if (!processedData || processedData.isChunked) return;
+    const fullPromptContent = processedData.chunks[0].parts.map(p => {
+        if (p.type === 'code') {
+            return `---
+### \`${p.path}\`
+
+\`\`\`${p.language || ''}
+${p.content}
+\`\`\``;
+        }
+        return p.content;
+    }).join('\n');
+    handleCopy(fullPromptContent, 'fullPrompt');
+  };
+
+  const getChunkContent = (index: number): string => {
+    if (!processedData || !processedData.chunks[index]) return '';
+    return processedData.chunks[index].parts.map(p => {
+        if (p.type === 'code') {
+            return `---
+### \`${p.path}\`
+
+\`\`\`${p.language || ''}
+${p.content}
+\`\`\``;
+        }
+        return p.content;
+    }).join('\n');
+  }
+
+  const handleCopyNextChunk = () => {
+    if (nextChunkToCopyIndex === -1) return;
+    copyToClipboard(getChunkContent(nextChunkToCopyIndex));
+    setCopiedChunks(current => {
+      const newCopied = [...current];
+      newCopied[nextChunkToCopyIndex] = true;
+      return newCopied;
+    });
+    setIsRewindMode(false);
+  };
+
+  const handleCopyPreviousChunk = () => {
+    const lastCopiedIndex = (nextChunkToCopyIndex === -1 ? copiedChunks.length : nextChunkToCopyIndex) - 1;
+    if (lastCopiedIndex < 0) return;
+    copyToClipboard(getChunkContent(lastCopiedIndex));
+    setIsRewindMode(false);
+  };
+  
+  // NEW: Handler to reset the copy progress
+  const handleResetCopy = () => {
+    if (!processedData) return;
+    setCopiedChunks(new Array(processedData.chunks.length).fill(false));
+    setIsRewindMode(false);
+  };
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const lastCopiedIndex = (nextChunkToCopyIndex === -1 ? copiedChunks.length : nextChunkToCopyIndex) - 1;
+
+  return (
+    <div className="w-[500px] h-[600px] bg-[#0A0F19] text-slate-200 font-sans flex flex-col p-4 relative overflow-hidden">
+      <div className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-900/40 blur-[100px] rounded-full z-0 opacity-60"></div>
+      <div className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-sky-900/40 blur-[100px] rounded-full z-0 opacity-60"></div>
+      <div className="z-10 w-full h-full mx-auto flex flex-col">
+        <header className="w-full text-center mb-4"><h1 className="text-2xl font-bold text-white flex items-center justify-center gap-2"><Wand2 size={24} className="text-purple-400" /> Context Crafter</h1></header>
+        <div className="flex-grow flex flex-col space-y-4 overflow-y-auto pr-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700">
+
+          {status === 'idle' && (
+            <div className="flex-grow flex flex-col space-y-4">
+               <div className="grid grid-cols-2 gap-2 bg-slate-900/80 p-1 rounded-md border border-slate-700">
+                  <button onClick={() => setInputType('drop')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${inputType === 'drop' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}>Drag & Drop</button>
+                  <button onClick={() => setInputType('github')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${inputType === 'github' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}>GitHub Repo</button>
+                </div>
+
+                {inputType === 'drop' ? (
+                  <>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFilesSelected}
+                      className="hidden"
+                      // These attributes are key for folder selection
+                      {...{ webkitdirectory: "true", mozdirectory: "true", directory: "true" }}
+                    />
+                    <div onClick={() => fileInputRef.current?.click()} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleFileDrop} className={`flex-grow flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg transition-colors duration-300 cursor-pointer ${isDragging ? 'border-purple-500 bg-purple-900/30' : 'border-slate-700 hover:border-purple-600'}`}>
+                      <UploadCloud className={`h-12 w-12 mb-4 transition-colors ${isDragging ? 'text-purple-400' : 'text-slate-500'}`} />
+                      <p className="text-slate-400 text-center">Drag & drop folder</p>
+                      <p className="text-slate-500 text-center font-semibold">or click to select</p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-grow flex flex-col space-y-4 justify-center">
+                    <input type="text" value={githubUrl} onChange={(e) => setGithubUrl(e.target.value)} placeholder="https://github.com/owner/repo" className="w-full bg-slate-900/80 text-slate-200 placeholder-slate-500 rounded-md px-4 py-3 border border-slate-700 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition"/>
+                    <button onClick={handleProcessGithub} disabled={!githubUrl} className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-4 rounded-lg transition-all disabled:bg-slate-700 disabled:cursor-not-allowed">
+                      <Github size={18}/> Process Repository
+                    </button>
+                  </div>
+                )}
+            </div>
+          )}
+
+          {status === 'loading' && (
+            <div className="flex-grow flex flex-col items-center justify-center p-4 text-center">
+                <LoaderCircle size={40} className="text-purple-400 animate-spin mb-4"/>
+                <p className="font-semibold text-slate-300">Processing Project...</p>
+                <p className="text-sm text-slate-400">Please wait while we craft your context.</p>
+            </div>
+          )}
+
+          {status === 'error' && (
+             <div className="flex-grow flex flex-col items-center justify-center p-4 text-center">
+                <AlertCircle size={40} className="text-red-500 mb-4"/>
+                <p className="font-semibold text-red-400">An Error Occurred</p>
+                <p className="text-sm text-slate-400 mb-4">{errorMessage}</p>
+                <button onClick={handleReset} className="bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2 px-5 rounded-lg transition-all">Try Again</button>
+             </div>
+          )}
+
+          {status === 'success' && processedData && (
+            <div className="bg-black/20 backdrop-blur-lg border border-white/10 rounded-xl shadow-2xl p-4 animate-fade-in space-y-4">
+              <div className='space-y-4'>
+                <div className="flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-white">Your Prompt</h2>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400 bg-slate-800/80 px-2 py-1 rounded-full border border-slate-700">~{processedData.token_estimate} tokens</span>
+                      {!processedData.isChunked && (
+                        <button onClick={handleCopyFullPrompt} className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold py-1.5 px-3 rounded-lg transition-all text-sm">
+                            {copiedStates['fullPrompt'] ? <><Check size={16}/> Copied</> : <><Copy size={16} /> Copy</>}
+                        </button>
+                      )}
+                    </div>
+                </div>
+
+                {processedData.isChunked && (
+                   <div className="p-3 bg-slate-900/80 border border-purple-500/30 rounded-lg text-xs text-purple-200">
+                     This project has been split into {processedData.chunks.length} parts. Copy and paste each part in order.
+                   </div>
+                )}
+
+                {processedData.isChunked && (
+                  <div className="pt-2 text-center">
+                    <div className="flex items-center gap-2">
+                      <button onClick={isRewindMode ? handleCopyPreviousChunk : handleCopyNextChunk} disabled={!isRewindMode && nextChunkToCopyIndex === -1} className="flex-grow flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg shadow-purple-900/50 hover:shadow-purple-500/40 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:shadow-none">
+                          {isRewindMode ? (
+                            <><ArrowUp size={18} /> Copy Previous Part ({lastCopiedIndex + 1}/{processedData.chunks.length})</>
+                          ) : (
+                            nextChunkToCopyIndex === -1 ? <><Check size={18}/> All Parts Copied</> : <> <Copy size={18} /> Copy Next Part ({nextChunkToCopyIndex + 1}/{processedData.chunks.length})</>
+                          )}
+                      </button>
+                       <button
+                          onClick={handleResetCopy}
+                          className="flex-shrink-0 p-3 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors"
+                          title="Start copying from the beginning"
+                        >
+                          <RefreshCw size={20} />
+                        </button>
+                    </div>
+                    {lastCopiedIndex >= 0 && !isRewindMode && (
+                        <button onClick={() => setIsRewindMode(true)} className="text-xs text-slate-400 hover:text-white underline mt-2">
+                          Copy previous part again?
+                        </button>
+                    )}
+                  </div>
+                )}
+
+                {processedData.chunks.map((chunk, chunkIndex) => (
+                  <div key={chunkIndex} ref={el => { if (el) chunkRefs.current[chunkIndex] = el; }} className="space-y-2">
+                    {processedData.isChunked && (
+                       <div className="flex justify-between items-center">
+                          <h3 className="font-semibold text-slate-300">Part {chunkIndex + 1} of {processedData.chunks.length}</h3>
+                           {copiedChunks[chunkIndex] && <span className="flex items-center gap-1 text-xs text-green-400"><Check size={14}/> Copied</span>}
+                       </div>
+                    )}
+                    <div className="space-y-3 p-3 bg-slate-900/80 border border-slate-700 rounded-lg">
+                       {chunk.parts.map((part, partIndex) => {
+                           const key = `chunk-${chunkIndex}-part-${partIndex}`;
+                           return (
+                            <div key={key}>
+                              {part.type === 'markdown' && <div className="text-slate-300 text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: part.content.replace(/`([^`]+)`/g, '<code class="bg-slate-700 text-purple-300 py-0.5 px-1 rounded-sm font-mono text-xs">$1</code>') }} />}
+                              {part.type === 'code' && (
+                                <div>
+                                  <div className="flex justify-between items-center mb-1 text-xs">
+                                      <span className="font-mono text-purple-300">{part.path}</span>
+                                      <button onClick={() => handleCopy(part.content, key)} className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors">
+                                        {copiedStates[key] ? <><Check size={14} className="text-green-400"/> Copied!</> : <><Copy size={14} /> Copy</>}
+                                      </button>
+                                  </div>
+                                  <CodeBlock content={part.content} />
+                                </div>
+                              )}
+                            </div>
+                           )
+                       })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <footer className="flex-shrink-0 pt-3 flex justify-between items-center">
+            <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-500 hover:text-white transition-colors"><Settings size={18} /></button>
+            {status !== 'idle' && <button onClick={handleReset} className="text-slate-500 hover:text-white font-semibold text-sm transition-colors">Start Over</button>}
+        </footer>
+      </div>
+
+      {isSettingsOpen && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center animate-fade-in-fast">
+          <div className="bg-slate-900 border border-white/10 rounded-xl shadow-2xl w-full max-w-md m-4 p-5">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-white">Settings</h2>
+              <button onClick={() => setIsSettingsOpen(false)} className="p-2 text-slate-400 hover:text-white"><X size={20}/></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-purple-300">Custom Ignore Patterns</label>
+                <p className="text-xs text-slate-400 mb-2">Ignore files/folders. One per line (e.g., `docs` or `*.test.js`).</p>
+                <textarea
+                  value={customIgnorePatterns}
+                  onChange={(e) => setCustomIgnorePatterns(e.target.value)}
+                  rows={6}
+                  className="w-full bg-slate-800 text-slate-200 placeholder-slate-500 rounded-md px-3 py-2 border border-slate-700 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition font-mono text-sm"
+                  placeholder="*.log
+dist
+coverage"
+                />
+              </div>
+              <div className="flex items-center justify-between bg-slate-800 p-3 rounded-md">
+                <div >
+                    <h3 className="font-semibold text-white text-sm">Smart Mode</h3>
+                    <p className="text-xs text-slate-400">Auto-ignore `node_modules`, `.git`, etc.</p>
+                </div>
+                <button onClick={() => setIsSmartMode(!isSmartMode)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSmartMode ? 'bg-purple-600' : 'bg-gray-600'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSmartMode ? 'translate-x-6' : 'translate-x-1'}`}/>
+                </button>
+              </div>
+               <button onClick={() => setIsSettingsOpen(false)} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition-all">
+                Done
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

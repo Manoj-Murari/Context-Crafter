@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Context Crafter",
+  "version": "1.0.0",
+  "description": "Intelligently package projects into a single prompt for any LLM.",
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "host_permissions": [
+    "https://api.github.com/",
+    "https://raw.githubusercontent.com/"
+  ]
+}
+
