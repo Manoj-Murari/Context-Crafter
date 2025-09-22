@@ -617,3 +617,6 @@ coverage"
     </div>
   );
 }
+
+
+// --- Code Crafter - (Version - 1.0)  ---
