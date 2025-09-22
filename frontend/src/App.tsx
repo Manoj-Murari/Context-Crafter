@@ -248,8 +248,8 @@ export default function App() {
             const queue: FileSystemEntry[] = [];
 
             for (let i = 0; i < dataTransferItemList.length; i++) {
-                 const entry = dataTransferItemList[i].webkitGetAsEntry();
-                 if(entry) queue.push(entry);
+                const entry = dataTransferItemList[i].webkitGetAsEntry();
+                if(entry) queue.push(entry);
             }
 
             while (queue.length > 0) {
@@ -305,53 +305,6 @@ export default function App() {
         handleApiError(error);
     }
   }, [customIgnorePatterns]);
-
-  const handleSelectFolder = async () => {
-    setStatus('loading');
-    setErrorMessage('');
-    setProcessedData(null);
-
-    try {
-      if (!(window as any).showDirectoryPicker) {
-        throw new Error("Your browser does not support the modern folder picker API. Please try dragging and dropping the folder instead.");
-      }
-      const directoryHandle = await (window as any).showDirectoryPicker();
-      
-      const filePayloads: FilePayload[] = [];
-      
-      async function processDirectory(dirHandle: any, path: string) {
-        for await (const entry of dirHandle.values()) {
-          const newPath = path ? `${path}/${entry.name}` : entry.name;
-          if (entry.kind === 'file') {
-            try {
-              const file = await entry.getFile();
-              // FIX: Only attempt to read files that are likely text-based.
-              if (file.type === "" || file.type.startsWith("text/")) {
-                const content = await file.text();
-                filePayloads.push({ path: newPath, content });
-              } else {
-                console.warn(`[App] Skipping binary file: ${newPath} (MIME type: ${file.type})`);
-              }
-            } catch (e) {
-               console.warn(`Could not read file: ${newPath}`, e);
-            }
-          } else if (entry.kind === 'directory') {
-            await processDirectory(entry, newPath);
-          }
-        }
-      }
-
-      await processDirectory(directoryHandle, '');
-      processFolderData(filePayloads, directoryHandle.name);
-
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        setStatus('idle');
-      } else {
-        handleApiError(error);
-      }
-    }
-  };
   
   const handleProcessGithub = useCallback(async () => {
     setStatus('loading');
@@ -489,7 +442,7 @@ ${p.content}
   const lastCopiedIndex = (nextChunkToCopyIndex === -1 ? copiedChunks.length : nextChunkToCopyIndex) - 1;
 
   return (
-    <div className="w-[500px] h-[600px] bg-[#0A0F19] text-slate-200 font-sans flex flex-col p-4 relative overflow-hidden">
+    <div className="w-full h-screen bg-[#0A0F19] text-slate-200 font-sans flex flex-col p-4 relative overflow-hidden">
       <div className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-900/40 blur-[100px] rounded-full z-0 opacity-60"></div>
       <div className="absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-sky-900/40 blur-[100px] rounded-full z-0 opacity-60"></div>
       <div className="z-10 w-full h-full mx-auto flex flex-col">
@@ -504,10 +457,9 @@ ${p.content}
                 </div>
 
                 {inputType === 'drop' ? (
-                  <div onClick={handleSelectFolder} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleFileDrop} className={`flex-grow flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg transition-colors duration-300 cursor-pointer ${isDragging ? 'border-purple-500 bg-purple-900/30' : 'border-slate-700 hover:border-purple-600'}`}>
+                  <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleFileDrop} className={`flex-grow flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg transition-colors duration-300 cursor-pointer ${isDragging ? 'border-purple-500 bg-purple-900/30' : 'border-slate-700 hover:border-purple-600'}`}>
                     <UploadCloud className={`h-12 w-12 mb-4 transition-colors ${isDragging ? 'text-purple-400' : 'text-slate-500'}`} />
-                    <p className="text-slate-400 text-center">Drag & drop folder</p>
-                    <p className="text-slate-500 text-center font-semibold">or click to select a folder</p>
+                    <p className="text-slate-400 text-center font-semibold">Drag & drop a folder here</p>
                   </div>
                 ) : (
                   <div className="flex-grow flex flex-col space-y-4 justify-center">
@@ -554,7 +506,7 @@ ${p.content}
 
                 {processedData.isChunked && (
                    <div className="p-3 bg-slate-900/80 border border-purple-500/30 rounded-lg text-xs text-purple-200">
-                      This project has been split into {processedData.chunks.length} parts. Copy and paste each part in order.
+                     This project has been split into {processedData.chunks.length} parts. Copy and paste each part in order.
                    </div>
                 )}
 
@@ -569,12 +521,12 @@ ${p.content}
                           )}
                       </button>
                        <button
-                         onClick={handleResetCopy}
-                         className="flex-shrink-0 p-3 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors"
-                         title="Start copying from the beginning"
-                       >
-                         <RefreshCw size={20} />
-                       </button>
+                        onClick={handleResetCopy}
+                        className="flex-shrink-0 p-3 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors"
+                        title="Start copying from the beginning"
+                      >
+                        <RefreshCw size={20} />
+                      </button>
                     </div>
                     {lastCopiedIndex >= 0 && !isRewindMode && (
                          <button onClick={() => setIsRewindMode(true)} className="text-xs text-slate-400 hover:text-white underline mt-2">
@@ -589,7 +541,7 @@ ${p.content}
                     {processedData.isChunked && (
                        <div className="flex justify-between items-center">
                          <h3 className="font-semibold text-slate-300">Part {chunkIndex + 1} of {processedData.chunks.length}</h3>
-                          {copiedChunks[chunkIndex] && <span className="flex items-center gap-1 text-xs text-green-400"><Check size={14}/> Copied</span>}
+                         {copiedChunks[chunkIndex] && <span className="flex items-center gap-1 text-xs text-green-400"><Check size={14}/> Copied</span>}
                        </div>
                     )}
                     <div className="space-y-3 p-3 bg-slate-900/80 border border-slate-700 rounded-lg">
@@ -665,4 +617,3 @@ coverage"
     </div>
   );
 }
-
