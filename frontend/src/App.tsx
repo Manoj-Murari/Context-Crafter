@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { UploadCloud, Github, Wand2, Copy, Check, AlertCircle, Settings, X, ArrowUp, LoaderCircle, RefreshCw } from 'lucide-react';
 
 // --- Type Definitions ---
@@ -174,7 +174,6 @@ function processProject(
 // --- Helper Components ---
 const CodeBlock = ({ content }: { content: string; }) => (<pre className="bg-slate-900/70 p-4 rounded-md overflow-x-auto text-sm text-slate-300 border border-slate-700"><code>{content}</code></pre>);
 
-// A more reliable copy method for Chrome extension popups
 const copyToClipboard = (text: string) => {
   const ta = document.createElement('textarea');
   ta.style.position = 'absolute';
@@ -205,9 +204,7 @@ export default function App() {
   const [copiedChunks, setCopiedChunks] = useState<boolean[]>([]);
   const [isRewindMode, setIsRewindMode] = useState(false);
   const nextChunkToCopyIndex = processedData ? copiedChunks.findIndex(copied => !copied) : -1;
-  const chunkRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null); // Ref for the hidden file input
-
+  
   const handleApiError = (error: any) => {
     console.error("[App] An error occurred:", error);
     setStatus('error');
@@ -234,6 +231,7 @@ export default function App() {
     setStatus('loading');
     setErrorMessage('');
     setProcessedData(null);
+    console.log('[App] File drop detected.');
 
     try {
         const items = e.dataTransfer.items;
@@ -245,83 +243,113 @@ export default function App() {
         const projectName = rootEntry.name;
         console.log(`[App] Dropped folder: ${projectName}`);
 
-        const processEntry = async (entry: any): Promise<FilePayload[]> => {
-          if (entry.isFile) {
-            return new Promise((resolve, reject) => {
-              entry.file((file: File) => {
-                const reader = new FileReader();
-                reader.onload = () => {
-                  const path = entry.fullPath ? entry.fullPath.slice(1) : entry.name;
-                  resolve([{ path, content: reader.result as string }]);
-                };
-                reader.onerror = (err) => {
-                    console.error(`[App] Error reading file: ${entry.fullPath}`, err);
-                    reject(err);
-                };
-                reader.readAsText(file);
-              });
-            });
-          }
-          if (entry.isDirectory) {
-            const reader = entry.createReader();
-            const entries = await new Promise<any[]>((resolve) => reader.readEntries(resolve));
-            const nestedFiles = await Promise.all(entries.map(processEntry));
-            return nestedFiles.flat();
-          }
-          return [];
+        const getAllFileEntries = async (dataTransferItemList: DataTransferItemList) => {
+            const fileEntries: FileSystemFileEntry[] = [];
+            const queue: FileSystemEntry[] = [];
+
+            for (let i = 0; i < dataTransferItemList.length; i++) {
+                 const entry = dataTransferItemList[i].webkitGetAsEntry();
+                 if(entry) queue.push(entry);
+            }
+
+            while (queue.length > 0) {
+                const entry = queue.shift();
+                if (entry?.isFile) {
+                    fileEntries.push(entry as FileSystemFileEntry);
+                } else if (entry?.isDirectory) {
+                    const reader = (entry as FileSystemDirectoryEntry).createReader();
+                    const entries = await new Promise<FileSystemEntry[]>((resolve) => {
+                        reader.readEntries(resolve);
+                    });
+                    queue.push(...entries);
+                }
+            }
+            return fileEntries;
         };
 
-        const files = await processEntry(rootEntry);
-        processFolderData(files, projectName);
+        const fileEntries = await getAllFileEntries(items);
+        console.log(`[App] Found ${fileEntries.length} total file entries.`);
+
+        const filePromises = fileEntries.map(entry => 
+            new Promise<FilePayload>((resolve, reject) => {
+                entry.file(
+                    file => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const path = entry.fullPath.startsWith('/') ? entry.fullPath.substring(1) : entry.fullPath;
+                            resolve({ path, content: reader.result as string });
+                        };
+                        reader.onerror = () => reject(new Error(`Failed to read file: ${entry.fullPath}`));
+                        reader.readAsText(file);
+                    },
+                    err => reject(err)
+                );
+            })
+        );
+
+        const results = await Promise.allSettled(filePromises);
+        
+        const successfulFiles: FilePayload[] = [];
+        results.forEach(result => {
+            if (result.status === 'fulfilled') {
+                successfulFiles.push(result.value);
+            } else {
+                console.warn('[App] Skipped a file due to read error:', result.reason);
+            }
+        });
+        
+        console.log(`[App] Successfully read ${successfulFiles.length} files.`);
+        processFolderData(successfulFiles, projectName);
+
     } catch(error) {
         handleApiError(error);
     }
   }, [customIgnorePatterns]);
 
-  // NEW: Handler for the hidden file input
-  const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSelectFolder = async () => {
     setStatus('loading');
     setErrorMessage('');
     setProcessedData(null);
 
     try {
-      const files = event.target.files;
-      if (!files || files.length === 0) {
-        setStatus('idle'); // No files selected, go back to idle
-        return;
+      if (!(window as any).showDirectoryPicker) {
+        throw new Error("Your browser does not support the modern folder picker API. Please try dragging and dropping the folder instead.");
       }
-
-      console.log(`[App] Selected ${files.length} files via input.`);
+      const directoryHandle = await (window as any).showDirectoryPicker();
       
       const filePayloads: FilePayload[] = [];
-      const fileReadPromises: Promise<void>[] = [];
-      let projectName = "Selected Project";
       
-      if (files.length > 0 && (files[0] as any).webkitRelativePath) {
-        projectName = (files[0] as any).webkitRelativePath.split('/')[0];
+      async function processDirectory(dirHandle: any, path: string) {
+        for await (const entry of dirHandle.values()) {
+          const newPath = path ? `${path}/${entry.name}` : entry.name;
+          if (entry.kind === 'file') {
+            try {
+              const file = await entry.getFile();
+              // FIX: Only attempt to read files that are likely text-based.
+              if (file.type === "" || file.type.startsWith("text/")) {
+                const content = await file.text();
+                filePayloads.push({ path: newPath, content });
+              } else {
+                console.warn(`[App] Skipping binary file: ${newPath} (MIME type: ${file.type})`);
+              }
+            } catch (e) {
+               console.warn(`Could not read file: ${newPath}`, e);
+            }
+          } else if (entry.kind === 'directory') {
+            await processDirectory(entry, newPath);
+          }
+        }
       }
 
-      for (const file of Array.from(files)) {
-        const promise = new Promise<void>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            filePayloads.push({
-              path: (file as any).webkitRelativePath || file.name,
-              content: reader.result as string,
-            });
-            resolve();
-          };
-          reader.onerror = reject;
-          reader.readAsText(file);
-        });
-        fileReadPromises.push(promise);
-      }
-
-      await Promise.all(fileReadPromises);
-      processFolderData(filePayloads, projectName);
+      await processDirectory(directoryHandle, '');
+      processFolderData(filePayloads, directoryHandle.name);
 
     } catch (error: any) {
-      handleApiError(error);
+      if (error.name === 'AbortError') {
+        setStatus('idle');
+      } else {
+        handleApiError(error);
+      }
     }
   };
   
@@ -440,7 +468,6 @@ ${p.content}
     setIsRewindMode(false);
   };
   
-  // NEW: Handler to reset the copy progress
   const handleResetCopy = () => {
     if (!processedData) return;
     setCopiedChunks(new Array(processedData.chunks.length).fill(false));
@@ -471,27 +498,17 @@ ${p.content}
 
           {status === 'idle' && (
             <div className="flex-grow flex flex-col space-y-4">
-               <div className="grid grid-cols-2 gap-2 bg-slate-900/80 p-1 rounded-md border border-slate-700">
+                <div className="grid grid-cols-2 gap-2 bg-slate-900/80 p-1 rounded-md border border-slate-700">
                   <button onClick={() => setInputType('drop')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${inputType === 'drop' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}>Drag & Drop</button>
                   <button onClick={() => setInputType('github')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${inputType === 'github' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}>GitHub Repo</button>
                 </div>
 
                 {inputType === 'drop' ? (
-                  <>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFilesSelected}
-                      className="hidden"
-                      // These attributes are key for folder selection
-                      {...{ webkitdirectory: "true", mozdirectory: "true", directory: "true" }}
-                    />
-                    <div onClick={() => fileInputRef.current?.click()} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleFileDrop} className={`flex-grow flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg transition-colors duration-300 cursor-pointer ${isDragging ? 'border-purple-500 bg-purple-900/30' : 'border-slate-700 hover:border-purple-600'}`}>
-                      <UploadCloud className={`h-12 w-12 mb-4 transition-colors ${isDragging ? 'text-purple-400' : 'text-slate-500'}`} />
-                      <p className="text-slate-400 text-center">Drag & drop folder</p>
-                      <p className="text-slate-500 text-center font-semibold">or click to select</p>
-                    </div>
-                  </>
+                  <div onClick={handleSelectFolder} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleFileDrop} className={`flex-grow flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg transition-colors duration-300 cursor-pointer ${isDragging ? 'border-purple-500 bg-purple-900/30' : 'border-slate-700 hover:border-purple-600'}`}>
+                    <UploadCloud className={`h-12 w-12 mb-4 transition-colors ${isDragging ? 'text-purple-400' : 'text-slate-500'}`} />
+                    <p className="text-slate-400 text-center">Drag & drop folder</p>
+                    <p className="text-slate-500 text-center font-semibold">or click to select a folder</p>
+                  </div>
                 ) : (
                   <div className="flex-grow flex flex-col space-y-4 justify-center">
                     <input type="text" value={githubUrl} onChange={(e) => setGithubUrl(e.target.value)} placeholder="https://github.com/owner/repo" className="w-full bg-slate-900/80 text-slate-200 placeholder-slate-500 rounded-md px-4 py-3 border border-slate-700 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition"/>
@@ -537,7 +554,7 @@ ${p.content}
 
                 {processedData.isChunked && (
                    <div className="p-3 bg-slate-900/80 border border-purple-500/30 rounded-lg text-xs text-purple-200">
-                     This project has been split into {processedData.chunks.length} parts. Copy and paste each part in order.
+                      This project has been split into {processedData.chunks.length} parts. Copy and paste each part in order.
                    </div>
                 )}
 
@@ -552,47 +569,47 @@ ${p.content}
                           )}
                       </button>
                        <button
-                          onClick={handleResetCopy}
-                          className="flex-shrink-0 p-3 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors"
-                          title="Start copying from the beginning"
-                        >
-                          <RefreshCw size={20} />
-                        </button>
+                         onClick={handleResetCopy}
+                         className="flex-shrink-0 p-3 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors"
+                         title="Start copying from the beginning"
+                       >
+                         <RefreshCw size={20} />
+                       </button>
                     </div>
                     {lastCopiedIndex >= 0 && !isRewindMode && (
-                        <button onClick={() => setIsRewindMode(true)} className="text-xs text-slate-400 hover:text-white underline mt-2">
-                          Copy previous part again?
-                        </button>
+                         <button onClick={() => setIsRewindMode(true)} className="text-xs text-slate-400 hover:text-white underline mt-2">
+                           Copy previous part again?
+                         </button>
                     )}
                   </div>
                 )}
 
                 {processedData.chunks.map((chunk, chunkIndex) => (
-                  <div key={chunkIndex} ref={el => { if (el) chunkRefs.current[chunkIndex] = el; }} className="space-y-2">
+                  <div key={chunkIndex} className="space-y-2">
                     {processedData.isChunked && (
                        <div className="flex justify-between items-center">
-                          <h3 className="font-semibold text-slate-300">Part {chunkIndex + 1} of {processedData.chunks.length}</h3>
-                           {copiedChunks[chunkIndex] && <span className="flex items-center gap-1 text-xs text-green-400"><Check size={14}/> Copied</span>}
+                         <h3 className="font-semibold text-slate-300">Part {chunkIndex + 1} of {processedData.chunks.length}</h3>
+                          {copiedChunks[chunkIndex] && <span className="flex items-center gap-1 text-xs text-green-400"><Check size={14}/> Copied</span>}
                        </div>
                     )}
                     <div className="space-y-3 p-3 bg-slate-900/80 border border-slate-700 rounded-lg">
                        {chunk.parts.map((part, partIndex) => {
                            const key = `chunk-${chunkIndex}-part-${partIndex}`;
                            return (
-                            <div key={key}>
-                              {part.type === 'markdown' && <div className="text-slate-300 text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: part.content.replace(/`([^`]+)`/g, '<code class="bg-slate-700 text-purple-300 py-0.5 px-1 rounded-sm font-mono text-xs">$1</code>') }} />}
-                              {part.type === 'code' && (
-                                <div>
-                                  <div className="flex justify-between items-center mb-1 text-xs">
-                                      <span className="font-mono text-purple-300">{part.path}</span>
-                                      <button onClick={() => handleCopy(part.content, key)} className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors">
-                                        {copiedStates[key] ? <><Check size={14} className="text-green-400"/> Copied!</> : <><Copy size={14} /> Copy</>}
-                                      </button>
-                                  </div>
-                                  <CodeBlock content={part.content} />
-                                </div>
-                              )}
-                            </div>
+                             <div key={key}>
+                               {part.type === 'markdown' && <div className="text-slate-300 text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: part.content.replace(/`([^`]+)`/g, '<code class="bg-slate-700 text-purple-300 py-0.5 px-1 rounded-sm font-mono text-xs">$1</code>') }} />}
+                               {part.type === 'code' && (
+                                 <div>
+                                   <div className="flex justify-between items-center mb-1 text-xs">
+                                       <span className="font-mono text-purple-300">{part.path}</span>
+                                       <button onClick={() => handleCopy(part.content, key)} className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors">
+                                         {copiedStates[key] ? <><Check size={14} className="text-green-400"/> Copied!</> : <><Copy size={14} /> Copy</>}
+                                       </button>
+                                   </div>
+                                   <CodeBlock content={part.content} />
+                                 </div>
+                               )}
+                             </div>
                            )
                        })}
                     </div>
@@ -639,7 +656,7 @@ coverage"
                 </button>
               </div>
                <button onClick={() => setIsSettingsOpen(false)} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded-lg transition-all">
-                Done
+                 Done
                </button>
             </div>
           </div>
