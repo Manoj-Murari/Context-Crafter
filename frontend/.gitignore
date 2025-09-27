@@ -10,8 +10,8 @@ npm-debug.log
 yarn-debug.log*
 
 #Dependency Directories
-
 node_modules/
+node_modules
 **/node_modules/
 backend/venv/
 backend/.venv/
