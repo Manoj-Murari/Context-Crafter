@@ -1,8 +1,30 @@
 // --- Configuration ---
+// --- Configuration ---
 const DEFAULT_IGNORE_PATTERNS = new Set([
-  ".git", ".svn", ".hg", ".vscode", ".idea", "node_modules", "vendor", "Pods",
-  "venv", ".venv", "__pycache__", "*.pyc", "*.pyo", "*.pyd", "build", "dist",
-  "target", "out", ".DS_Store", "Thumbs.db", "*.log", ".env",
+  // Version Control & Environment
+  ".git", ".svn", ".hg", ".env",
+
+  // IDE & Editor Config
+  ".vscode", ".idea",
+
+  // Dependency & Package Manager
+  "node_modules", "vendor", "Pods", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+
+  // Python Specific
+  "venv", ".venv", "__pycache__", "*.pyc", "*.pyo", "*.pyd",
+
+  // Build & Distribution Artifacts
+  "build", "dist", "target", "out",
+
+  // OS Specific
+  ".DS_Store", "Thumbs.db",
+
+  // Logs & Temp files
+  "*.log",
+
+  // Boilerplate Configs
+  "tsconfig.json", "tsconfig.app.json", "tsconfig.node.json",
+  "vite-env.d.ts", "eslint.config.js", "postcss.config.js",
 ]);
 
 const BINARY_EXTENSIONS = new Set([

@@ -1,5 +1,9 @@
 {
   "devDependencies": {
+    "@types/chrome": "^0.1.12",
     "tailwind-scrollbar": "^4.0.2"
+  },
+  "dependencies": {
+    "vitest": "^3.2.4"
   }
 }

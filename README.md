@@ -1,151 +1,96 @@
 # 🪄 Context Crafter
 
-**In the age of AI, your codebase is a conversation.
-This is the ultimate universal translator.**
+Turn your entire codebase into a perfectly formatted prompt for any LLM, right from your browser.
 
----
+In the age of AI, your codebase is a conversation. Context Crafter is the ultimate universal translator, letting you brief your AI assistant on a complete project without the hassle of manual file handling or context limits.
 
 ## ✨ What It Does
 
-Manually copying files into an AI prompt breaks your flow and quickly hits context limits.
-**Context Crafter** fixes this by reading your repository, filtering out the noise, and giving your AI a single, focused brief.
+Manually copying and pasting files into an AI prompt is slow, inefficient, and quickly hits token limits. Context Crafter solves this by intelligently reading your project, filtering out the noise, and packaging everything into a single, focused brief for your AI.
 
----
+It runs as a Chrome Extension in your browser's side panel, integrating seamlessly into your workflow.
 
-## 🧪 Features
+## 🧪 Key Features
 
-* 🌐 **Universal Ingestion** – Process any public GitHub repo or local folder
-* 🤖 **Smart Filtering** – Ignores noise like `node_modules`, `.git`, and build artifacts
-* ⚙️ **Custom Controls** – Add ignore patterns to focus only on what matters
-* 🧩 **Context Splitting** – Breaks large projects into manageable, ordered parts
-* 💎 **Modern UI** – Clean, glassmorphism design for a smooth workflow
+- 🌐 **Universal Ingestion**: Process projects directly from a public GitHub repository URL or by dragging and dropping a local folder.
+- 🤖 **Smart Filtering**: Automatically ignores clutter like `node_modules`, `.git`, build artifacts, and binary files to keep your context clean and relevant.
+- ⚙️ **Custom Ignore Patterns**: Fine-tune the output by adding your own custom rules to ignore specific files or directories.
+- 🧩 **Automatic Context Splitting**: For large projects, it automatically breaks the context into numbered, sequential parts that you can paste one by one.
+- 📋 **Guided Copy Workflow**: The UI tracks which parts you've copied, making it easy to manage large, multi-part prompts.
+- 💎 **Modern UI**: A clean, intuitive interface designed for a fast and smooth workflow, accessible right in your browser's side panel.
 
----
+## 🚀 Getting Started (Easy Install)
 
-## 🚀 Getting Started
+You can install and use Context Crafter in developer mode in just a few steps.
 
-### Using the Web App
+### Download the Extension
 
-1. Open the Context Crafter app
-2. Paste a GitHub repository URL
-3. Click **Process Repository**
-4. Follow the guided workflow to copy context into your AI
+1. Go to the main repository page: https://github.com/Manoj-Murari/Context-Crafter
+2. Click the green **< > Code** button, then click **Download ZIP**.
+3. Unzip the downloaded file. The folder you need for the extension is located at `frontend/dist`.
 
-### Running Locally
+### Load the Extension in Chrome
 
-```bash
-git clone https://github.com/your-username/context-crafter.git
-cd context-crafter
-```
+1. Open your Chrome browser and navigate to `chrome://extensions`.
+2. Enable **Developer mode** using the toggle switch in the top-right corner.
+3. Click the **"Load unpacked"** button that appears.
+4. Select the `frontend/dist` folder from the unzipped repository you downloaded in step 1.
 
----
+### Ready to Go!
 
-## ⚡ Setup Instructions
+The Context Crafter extension will now appear in your extensions list. Pin it to your toolbar and click the icon to open it in the side panel!
 
-### 🛠 Backend Setup
+## 🛠️ For Developers (Contributing & Running Locally)
 
-Navigate to the backend directory:
+If you want to contribute to the project or run it from the source code, follow these steps.
 
-```bash
-cd backend
-```
+### Prerequisites
 
-Create and activate a Python virtual environment:
+- Node.js (v20.x or higher recommended)
+- npm
 
-**For Windows**
+### Installation & Setup
 
-```bash
-python -m venv venv
-.\venv\Scripts\activate
-```
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/Manoj-Murari/Context-Crafter.git
+   cd Context-Crafter/frontend
+   ```
 
-**For macOS/Linux**
+2. **Install Dependencies**:
+   ```bash
+   npm install
+   ```
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
+3. **Run the Development Server**:
+   This will start the Vite development server with hot-reloading.
+   ```bash
+   npm run dev
+   ```
 
-Install the required packages:
+   **Note**: To load the extension while developing, you will still need to run `npm run build` once to create the initial `dist` folder.
 
-```bash
-pip install -r requirements.txt
-```
+## 🔮 Future Plans
 
----
+We are working hard to bring Context Crafter to the official Chrome Web Store for a simple, one-click installation. Stay tuned!
 
-### 🎨 Frontend Setup
+## 💻 Tech Stack
 
-Navigate to the frontend directory:
-
-```bash
-cd ../frontend
-```
-
-Install the required npm packages:
-
-```bash
-npm install
-```
-
----
-
-### 🚀 Launch the Application
-
-**Terminal 1 (Backend):**
-
-```bash
-uvicorn main:app --reload
-```
-
-**Terminal 2 (Frontend):**
-
-```bash
-npm run dev
-```
-
----
-
-### 🌐 Access the App
-
-Open your browser and go to:
-[http://localhost:5173](http://localhost:5173)
-
----
-
-## 🛠 Tech Stack
-
-* **Frontend:** React, Vite, TypeScript, Tailwind CSS
-* **Backend:** FastAPI, Python 3
-* **Deployment:** Vercel (frontend) & Render (backend)
-
----
+- **Framework**: React with Vite & TypeScript
+- **Styling**: Tailwind CSS
+- **Icons**: Lucide React
+- **Platform**: Chrome Extension (Manifest V3)
 
 ## 🤝 Contributing
 
-Contributions are welcome!
+Contributions are welcome! If you have ideas for new features or improvements, feel free to fork the repository, make your changes, and open a pull request.
 
-1. Fork the repo
-2. Create a branch:
-
-```bash
-git checkout -b feature/my-feature
-```
-
-3. Commit your changes:
-
-```bash
-git commit -m "Add my feature"
-```
-
-4. Push to your branch:
-
-```bash
-git push origin feature/my-feature
-```
-
-5. Open a Pull Request 🚀
+1. Fork the repo.
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
+4. Push to the branch (`git push origin feature/AmazingFeature`).
+5. Open a Pull Request.
 
 ---
 
-<p align="center">Made with ❤️ by those who believe in better workflows.</p> 
+<p align="center">Made with ❤️ for a more intelligent workflow.</p>
