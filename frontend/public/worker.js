@@ -1,20 +1,19 @@
 // --- Configuration ---
-// --- Configuration ---
 const DEFAULT_IGNORE_PATTERNS = new Set([
   // Version Control & Environment
-  ".git", ".svn", ".hg", ".env",
+  ".git/", ".svn/", ".hg/", ".env",
 
   // IDE & Editor Config
-  ".vscode", ".idea",
+  ".vscode/", ".idea/",
 
   // Dependency & Package Manager
-  "node_modules", "vendor", "Pods", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+  "node_modules/", "vendor/", "Pods/", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
 
   // Python Specific
-  "venv", ".venv", "__pycache__", "*.pyc", "*.pyo", "*.pyd",
+  "venv/", ".venv/", "__pycache__/", "*.pyc", "*.pyo", "*.pyd",
 
   // Build & Distribution Artifacts
-  "build", "dist", "target", "out",
+  "build/", "dist/", "target/", "out/",
 
   // OS Specific
   ".DS_Store", "Thumbs.db",
@@ -34,38 +33,52 @@ const BINARY_EXTENSIONS = new Set([
 ]);
 
 // --- Core Engine Logic ---
-function isIgnored(path, customIgnorePatterns) {
-  const allIgnorePatterns = [...customIgnorePatterns];
-  
-  // Simple glob to regex conversion
-  const patternToRegex = (pattern) => {
-    // Escape special regex characters
-    let regexString = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-    // Convert glob wildcards to regex
-    regexString = regexString.replace(/\*\*/g, '.*'); // Match any characters including slashes
-    regexString = regexString.replace(/\*/g, '[^/]*'); // Match any characters except slashes
-    return new RegExp(`^${regexString}$`);
-  };
+// ✅ FIXED: A much more robust and accurate implementation of the ignore logic.
+function isIgnored(path, allIgnorePatterns) {
+    const parts = path.split('/');
+    const filename = parts[parts.length - 1];
 
-  const regexPatterns = allIgnorePatterns.map(patternToRegex);
-  const parts = path.split('/');
+    for (const pattern of allIgnorePatterns) {
+        let isDirOnly = pattern.endsWith('/');
+        let cleanPattern = isDirOnly ? pattern.slice(0, -1) : pattern;
 
-  // Check if any part of the path matches a default ignore pattern (e.g., node_modules)
-  for (const part of parts) {
-    if (DEFAULT_IGNORE_PATTERNS.has(part)) return true;
-  }
+        // This handles patterns like "node_modules/" or "build/"
+        if (isDirOnly) {
+            if (parts.some(part => part === cleanPattern)) {
+                return true;
+            }
+            continue;
+        }
 
-  // Check if the full path or any part of it matches the regex patterns from .gitignore/custom settings
-  for (const re of regexPatterns) {
-    if (re.test(path)) return true; // Check against the full path
-    if (parts.some(part => re.test(part))) return true; // Check against individual parts
-  }
+        // This handles wildcard patterns like "*.log" or "package-lock.json"
+        if (cleanPattern.includes('*')) {
+            const regex = new RegExp('^' + cleanPattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+            if (regex.test(filename)) { // Test against file/folder name
+                return true;
+            }
+             if (regex.test(path)) { // Test against full path for "**" patterns
+                return true;
+            }
+        } else {
+            // This handles exact name matches like ".DS_Store" or "pnpm-lock.yaml"
+            if (filename === cleanPattern) {
+                return true;
+            }
+            // Also handles cases where an exact folder name is given without a trailing slash
+            if (parts.some(part => part === cleanPattern)) {
+                return true;
+            }
+        }
+    }
 
-  // Check for binary file extensions
-  const extension = '.' + path.split('.').pop();
-  return BINARY_EXTENSIONS.has(extension);
+    // Check for binary file extensions
+    const extension = path.includes('.') ? '.' + path.split('.').pop() : '';
+    if (BINARY_EXTENSIONS.has(extension)) {
+      return true;
+    }
+
+    return false;
 }
-
 
 function getLanguage(filename) {
     const extension = filename.split('.').pop()?.toLowerCase();
@@ -78,6 +91,7 @@ function getLanguage(filename) {
 
 function processProject(files, projectName, customIgnorePatterns, gitignoreContent = '') {
     const allIgnorePatterns = [
+      ...DEFAULT_IGNORE_PATTERNS,
       ...customIgnorePatterns,
       ...(gitignoreContent.split('\n').filter(line => line.trim() !== '' && !line.trim().startsWith('#')))
     ];

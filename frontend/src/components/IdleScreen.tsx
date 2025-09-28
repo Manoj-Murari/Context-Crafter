@@ -10,6 +10,7 @@ interface IdleScreenProps {
   handleFileDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   isDragging: boolean;
   setIsDragging: (isDragging: boolean) => void;
+  isSmartMode: boolean;
 }
 
 export function IdleScreen({
@@ -21,6 +22,7 @@ export function IdleScreen({
   handleFileDrop,
   isDragging,
   setIsDragging,
+  isSmartMode,
 }: IdleScreenProps) {
   
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -37,6 +39,18 @@ export function IdleScreen({
 
   return (
     <div className="flex-grow flex flex-col space-y-4">
+      {isSmartMode && (
+        <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+            <span className="text-sm font-semibold text-purple-300">Smart Mode Enabled</span>
+          </div>
+          <p className="text-xs text-slate-300">
+            AI-powered ignore list generation will help you create the perfect context for your project.
+          </p>
+        </div>
+      )}
+      
       <div className="grid grid-cols-2 gap-2 bg-slate-900/80 p-1 rounded-md border border-slate-700">
         <button onClick={() => setInputType('drop')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${inputType === 'drop' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}>Drag & Drop</button>
         <button onClick={() => setInputType('github')} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${inputType === 'github' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}>GitHub Repo</button>

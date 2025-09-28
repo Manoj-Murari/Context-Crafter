@@ -1,9 +1,12 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Wand2, AlertCircle, Settings, LoaderCircle } from 'lucide-react';
-import { processProject, type FilePayload, type ProcessedOutput } from './core/engine';
+// ⛔️ REMOVED: No longer importing the synchronous engine
+// ✅ ADDED: Importing types from their new dedicated file
+import type { FilePayload, ProcessedOutput } from './core/types';
 import { SettingsModal } from './components/SettingsModal';
 import { IdleScreen } from './components/IdleScreen';
 import { SuccessScreen } from './components/SuccessScreen';
+import { IgnoreWizardModal } from './components/IgnoreWizardModal';
 
 // --- Main App Component ---
 export default function App() {
@@ -20,8 +23,14 @@ export default function App() {
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
   const [copiedChunks, setCopiedChunks] = useState<boolean[]>([]);
   const [isRewindMode, setIsRewindMode] = useState(false);
+  const [isIgnoreWizardOpen, setIsIgnoreWizardOpen] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<FilePayload[]>([]);
+  const [pendingProjectName, setPendingProjectName] = useState('');
   const nextChunkToCopyIndex = processedData ? copiedChunks.findIndex(copied => !copied) : -1;
   const lastCopiedIndex = (nextChunkToCopyIndex === -1 ? copiedChunks.length : nextChunkToCopyIndex) - 1;
+
+  // ✅ ADD a ref to hold our worker instance
+  const workerRef = useRef<Worker | null>(null);
 
   // This hook loads our saved progress when the app opens!
   useEffect(() => {
@@ -36,6 +45,38 @@ export default function App() {
       });
     }
   }, []);
+
+  // ✅ ADD useEffect to initialize and terminate the worker
+  useEffect(() => {
+    // Create a new worker
+    workerRef.current = new Worker('/worker.js');
+
+    // Listen for messages from the worker
+    workerRef.current.onmessage = (event) => {
+        const { type, payload } = event.data;
+        if (type === 'SUCCESS') {
+            console.log('[App] Worker finished successfully.');
+            const newCopiedChunks = new Array(payload.chunks.length).fill(false);
+            setProcessedData(payload);
+            setCopiedChunks(newCopiedChunks);
+            setStatus('success');
+            if (chrome && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set({ sessionData: { processedData: payload, copiedChunks: newCopiedChunks } });
+            }
+        } else if (type === 'ERROR') {
+            console.error('[App] Worker encountered an error:', payload);
+            handleApiError(new Error(payload.message));
+        } else if (type === 'PROGRESS') {
+            // This gives the user live feedback!
+            setProgressMessage(payload);
+        }
+    };
+
+    // Cleanup function to terminate the worker when the component unmounts
+    return () => {
+        workerRef.current?.terminate();
+    };
+}, []); // The empty dependency array ensures this runs only once
 
   const copyToClipboard = (text: string) => {
     const ta = document.createElement('textarea');
@@ -58,30 +99,67 @@ export default function App() {
     setErrorMessage(error.message || "An unexpected error occurred. Check the extension console for details.");
   };
 
+  // ✅ REFACTORED: This function now sends the job to the worker instead of running it directly.
   const runProjectProcessing = (files: FilePayload[], projectName: string) => {
-    try {
-      console.log(`[App] Received ${files.length} files for project: ${projectName}`);
-      if (files.length === 0) throw new Error("The selected folder is empty or no readable files were found after filtering.");
-      
-      const gitignoreFile = files.find(file => file.path.endsWith('.gitignore'));
-      const allIgnorePatterns = [
-        ...customIgnorePatterns.split('\n').filter(p => p.trim() !== ''),
-        ...(gitignoreFile ? gitignoreFile.content.split('\n') : [])
-      ];
-
-      const output = processProject(files, projectName, allIgnorePatterns);
-      
-      const newCopiedChunks = new Array(output.chunks.length).fill(false);
-      setProcessedData(output);
-      setCopiedChunks(newCopiedChunks);
-      setStatus('success');
-      
-      if (chrome && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.set({ sessionData: { processedData: output, copiedChunks: newCopiedChunks }});
-      }
-    } catch (error: any) {
-      handleApiError(error);
+    console.log(`[App] Handing off ${files.length} files to worker for project: ${projectName}`);
+    if (files.length === 0) {
+        handleApiError(new Error("The selected folder is empty or no readable files were found after filtering."));
+        return;
     }
+
+    // If smart mode is enabled, show the ignore wizard first
+    if (isSmartMode) {
+      setPendingFiles(files);
+      setPendingProjectName(projectName);
+      // Keep loading state active while wizard is open
+      setProgressMessage('Analyzing project structure...');
+      setIsIgnoreWizardOpen(true);
+      return;
+    }
+
+    // Otherwise, proceed with the original workflow
+    setStatus('loading');
+    setProgressMessage('Processing project...');
+    processWithIgnorePatterns(files, projectName, customIgnorePatterns);
+  };
+
+  const processWithIgnorePatterns = (files: FilePayload[], projectName: string, ignorePatterns: string) => {
+    const gitignoreFile = files.find(file => file.path.endsWith('.gitignore'));
+    const gitignoreContent = gitignoreFile ? gitignoreFile.content : '';
+
+    // Parse ignore patterns properly - filter out comments and empty lines
+    const parsedIgnorePatterns = ignorePatterns
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line !== '' && !line.startsWith('#'));
+
+    console.log(`[App] Processing with ${parsedIgnorePatterns.length} ignore patterns:`, parsedIgnorePatterns);
+
+    // Post the job to the worker
+    workerRef.current?.postMessage({
+        files,
+        projectName,
+        customIgnorePatterns: parsedIgnorePatterns,
+        gitignoreContent
+    });
+  };
+
+  const handleApplyIgnoreList = (ignoreList: string) => {
+    if (pendingFiles.length > 0 && pendingProjectName) {
+      setStatus('loading');
+      setProgressMessage('Processing project with custom ignore list...');
+      processWithIgnorePatterns(pendingFiles, pendingProjectName, ignoreList);
+    }
+  };
+
+  const handleCancelIgnoreWizard = () => {
+    // Reset the app state when wizard is cancelled
+    setStatus('idle');
+    setPendingFiles([]);
+    setPendingProjectName('');
+    setIsIgnoreWizardOpen(false);
+    setErrorMessage('');
+    setProgressMessage('Processing project...');
   };
 
   const handleFileDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
@@ -144,10 +222,23 @@ export default function App() {
                         const reader = new FileReader();
                         reader.onload = () => {
                             const path = entry.fullPath.startsWith('/') ? entry.fullPath.substring(1) : entry.fullPath;
-                            resolve({ path, content: reader.result as string });
+                            // For simplicity in this non-binary context, we assume text files.
+                            // A more robust solution would check file type before reading as text.
+                            if (typeof reader.result === 'string') {
+                                resolve({ path, content: reader.result });
+                            } else {
+                                // Resolve with empty content for non-text files to avoid errors
+                                resolve({ path, content: '' });
+                            }
                         };
                         reader.onerror = () => reject(new Error(`Failed to read file: ${entry.fullPath}`));
-                        reader.readAsText(file);
+                        // A small check to avoid trying to read huge files as text
+                        if (file.size < 20 * 1024 * 1024) { // 20MB limit for reading as text
+                            reader.readAsText(file);
+                        } else {
+                            console.warn(`[App] Skipping large file (>${file.size} bytes): ${entry.fullPath}`);
+                            resolve({ path: entry.fullPath.substring(1), content: '' });
+                        }
                     },
                     err => reject(err)
                 );
@@ -158,9 +249,9 @@ export default function App() {
         
         const successfulFiles: FilePayload[] = [];
         results.forEach(result => {
-            if (result.status === 'fulfilled') {
+            if (result.status === 'fulfilled' && result.value.content) { // Only include files with content
                 successfulFiles.push(result.value);
-            } else {
+            } else if (result.status === 'rejected') {
                 console.warn('[App] Skipped a file due to read error:', result.reason);
             }
         });
@@ -169,7 +260,7 @@ export default function App() {
         if (successfulFiles.length > 0) {
           runProjectProcessing(successfulFiles, projectName);
         } else {
-          throw new Error("No readable files were found in the dropped folder.");
+          throw new Error("No readable text files were found in the dropped folder.");
         }
 
     } catch(error) {
@@ -208,7 +299,8 @@ export default function App() {
           return;
       }
       
-      const GITHUB_FILE_LIMIT = 75;
+      // Increased limit, as API fetching is lighter than local reading, but still a safeguard.
+      const GITHUB_FILE_LIMIT = 1000;
       if (filesToFetch.length > GITHUB_FILE_LIMIT) {
         handleApiError(new Error(`This repository has too many files (${filesToFetch.length}) to process via the API. Please use the drag-and-drop method.`));
         return;
@@ -374,6 +466,7 @@ ${p.content}
             handleFileDrop={handleFileDrop}
             isDragging={isDragging}
             setIsDragging={setIsDragging}
+            isSmartMode={isSmartMode}
           />
         );
     }
@@ -402,7 +495,14 @@ ${p.content}
         isSmartMode={isSmartMode}
         setIsSmartMode={setIsSmartMode}
       />
+
+      <IgnoreWizardModal
+        isOpen={isIgnoreWizardOpen}
+        onClose={handleCancelIgnoreWizard}
+        files={pendingFiles}
+        projectName={pendingProjectName}
+        onApplyIgnoreList={handleApplyIgnoreList}
+      />
     </div>
   );
 }
-

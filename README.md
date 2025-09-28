@@ -13,11 +13,26 @@ It runs as a Chrome Extension in your browser's side panel, integrating seamless
 ## 🧪 Key Features
 
 - 🌐 **Universal Ingestion**: Process projects directly from a public GitHub repository URL or by dragging and dropping a local folder.
-- 🤖 **Smart Filtering**: Automatically ignores clutter like `node_modules`, `.git`, build artifacts, and binary files to keep your context clean and relevant.
-- ⚙️ **Custom Ignore Patterns**: Fine-tune the output by adding your own custom rules to ignore specific files or directories.
-- 🧩 **Automatic Context Splitting**: For large projects, it automatically breaks the context into numbered, sequential parts that you can paste one by one.
-- 📋 **Guided Copy Workflow**: The UI tracks which parts you've copied, making it easy to manage large, multi-part prompts.
-- 💎 **Modern UI**: A clean, intuitive interface designed for a fast and smooth workflow, accessible right in your browser's side panel.
+- � **AI-Powered Project Analysis**: 
+  - Automatically detects your project's tech stack, frameworks, and build tools
+  - Generates custom-tailored ignore patterns based on project structure
+  - Smart filtering of non-essential files and directories
+- 🎯 **Intelligent Context Management**:
+  - Automatic context splitting for large projects into digestible chunks
+  - Progress tracking with rewind capability for reviewing previous parts
+  - Token estimation and optimization for different LLM context limits
+- ⚙️ **Advanced Configuration**:
+  - Smart Mode for AI-assisted project setup
+  - Custom ignore patterns with live preview
+  - Automatic detection and integration of existing `.gitignore` rules
+- �️ **Robust Processing**:
+  - Background processing for large projects using Web Workers
+  - Automatic binary file detection and filtering
+  - Efficient file tree generation with proper formatting
+- 💎 **Modern UI/UX**: 
+  - Clean, responsive interface with smooth animations
+  - Real-time progress feedback
+  - Session persistence for managing long-running tasks
 
 ## 🚀 Getting Started (Easy Install)
 
@@ -76,10 +91,21 @@ We are working hard to bring Context Crafter to the official Chrome Web Store fo
 
 ## 💻 Tech Stack
 
-- **Framework**: React with Vite & TypeScript
-- **Styling**: Tailwind CSS
-- **Icons**: Lucide React
-- **Platform**: Chrome Extension (Manifest V3)
+- **Frontend**:
+  - React 19 with TypeScript
+  - Vite 7 for blazing fast builds
+  - Tailwind CSS for styling
+  - Lucide React for icons
+- **Core Features**:
+  - Web Workers for background processing
+  - Chrome Extension APIs (Manifest V3)
+  - Side Panel integration
+  - Local storage for session persistence
+- **Development**:
+  - ESLint with strict TypeScript rules
+  - Vitest for testing
+  - Hot Module Replacement (HMR)
+  - Chrome Extension Developer Tools
 
 ## 🤝 Contributing
 
