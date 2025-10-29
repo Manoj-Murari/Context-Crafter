@@ -1,4 +1,4 @@
-# 🪄 Context Crafter
+#  Context Crafter - A Web Extension
 
 Turn your entire codebase into a perfectly formatted prompt for any LLM, right from your browser.
 
